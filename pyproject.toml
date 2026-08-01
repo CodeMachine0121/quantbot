@@ -19,3 +19,7 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.1",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
