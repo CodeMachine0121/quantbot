@@ -11,3 +11,8 @@ wheels/
 
 .env
 .idea/*
+
+
+*.csv
+*.parquet
+*.html
