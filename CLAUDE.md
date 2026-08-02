@@ -173,6 +173,7 @@ uv run lint-imports           # import-linter：檢查依賴方向
 docker compose -f docker/docker-compose.yml up -d   # 起 TimescaleDB
 uv run python -m quantbot.entrypoints.backfill_command --help
 uv run python -m quantbot.entrypoints.ingest_pipeline_command
+uv run python -m quantbot.entrypoints.crossover_chart_command --timeframe 1h
 ```
 
 ## Layout
@@ -203,7 +204,8 @@ quantbot/
 │   ├── charting/                      Plotly*Renderer
 │   ├── configuration/                 YamlPipelineConfigurationLoader
 │   └── system_clock.py                SystemClock
-├── entrypoints/                       backfill_command.py, ingest_pipeline_command.py（組裝根）
+├── entrypoints/                       backfill_command.py, ingest_pipeline_command.py,
+│                                      crossover_chart_command.py（組裝根）
 └── tests/                             鏡射上述結構的黑箱測試
 ```
 
