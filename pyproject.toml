@@ -1,9 +1,9 @@
 [project]
 name = "quantbot"
 version = "0.1.0"
-description = "Add your description here"
+description = "加密貨幣量化交易研究與執行：從 K 線到可組合的交易策略引擎"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "asyncpg>=0.31.0",
     "ccxt>=4.5.70",
@@ -19,7 +19,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.3",
+    "mypy>=1.18",
     "pytest>=9.1.1",
+    "types-pyyaml>=6.0",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.1",
 ]
@@ -27,3 +30,62 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["integration: 需要真的 PostgreSQL，沒有連線字串時 skip"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["ANN", "ARG", "B", "C4", "E", "F", "I", "N", "PD", "RUF", "SIM", "UP"]
+# RUF001-003 抓的是「看起來像 ASCII 的 Unicode 字元」，但本專案的 docstring
+# 與註解是中文，全形標點會被整批誤報，所以關掉這三條。
+ignore = ["ANN401", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN201", "ANN001"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+# Protocol 的相容性只有型別檢查器驗得出來，沒有這一段 Protocol 就只是註解
+files = ["quantbot"]
+
+[[tool.mypy.overrides]]
+module = ["asyncpg.*", "ccxt.*", "plotly.*", "pandas_ta.*"]
+ignore_missing_imports = true
+
+[tool.importlinter]
+root_package = "quantbot"
+# forbidden 契約裡點名了 httpx、ccxt 這些外部套件，所以要打開這個開關
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "分層：依賴方向一律指向 domain"
+type = "layers"
+layers = ["quantbot.entrypoints", "quantbot.application", "quantbot.domain"]
+
+[[tool.importlinter.contracts]]
+name = "domain 不認識任何外部技術"
+type = "forbidden"
+source_modules = ["quantbot.domain"]
+forbidden_modules = [
+    "httpx",
+    "ccxt",
+    "asyncpg",
+    "plotly",
+    "yaml",
+    "quantbot.infrastructure",
+    "quantbot.application",
+    "quantbot.entrypoints",
+]
+
+[[tool.importlinter.contracts]]
+name = "正式路徑 NEVER 依賴測試用的參考實作"
+type = "forbidden"
+source_modules = ["quantbot"]
+forbidden_modules = ["tests"]
