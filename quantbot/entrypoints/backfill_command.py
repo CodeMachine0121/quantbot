@@ -43,7 +43,15 @@ from quantbot.infrastructure.binance.binance_rate_limit_guard import (
 from quantbot.infrastructure.binance.binance_rest_candle_source import (
     BinanceRestCandleSource,
 )
+from quantbot.infrastructure.persistence.postgres_database import PostgresDatabase
+from quantbot.infrastructure.persistence.timescale_candle_repository import (
+    TimescaleCandleRepository,
+)
 from quantbot.infrastructure.system_clock import SystemClock
+
+# 這支指令一次交出整段合併好的資料，分不出哪幾根來自批次檔、哪幾根來自 REST。
+# 逐段的來源標記是 Day 08 管線的事，它按 FetchInstruction 一段一段寫。
+STORE_SOURCE = "backfill"
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -54,6 +62,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
     parser.add_argument("--out", type=Path, default=Path("data/klines"))
+    parser.add_argument(
+        "--store",
+        action="store_true",
+        help="除了落地 parquet，也寫進 candles（需要先跑過 migrate）",
+    )
     return parser.parse_args()
 
 
@@ -110,6 +123,17 @@ async def main() -> int:
         f"{len(series)} 根，缺 {integrity.missing_bar_count} 根，"
         f"覆蓋率 {integrity.coverage_ratio:.4%}"
     )
+
+    if arguments.store:
+        database = PostgresDatabase.from_settings()
+        try:
+            repository = TimescaleCandleRepository(database)
+            written = await repository.save(series, source=STORE_SOURCE)
+        finally:
+            await database.close()
+        # 重跑時這個數字會是 0：主鍵把重複的列擋掉了，不是沒寫進去
+        print(f"寫入 candles：新增 {written} 列")
+
     return 0 if integrity.is_complete else 1
 
 

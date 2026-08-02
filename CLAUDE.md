@@ -175,6 +175,8 @@ uv run python -m quantbot.entrypoints.backfill_command --help
 uv run python -m quantbot.entrypoints.ingest_pipeline_command
 uv run python -m quantbot.entrypoints.crossover_chart_command --timeframe 1h
 uv run python -m quantbot.entrypoints.smoothing_comparison_command --timeframe 1h
+uv run python -m quantbot.entrypoints.relative_strength_command --timeframe 1h
+uv run python -m quantbot.infrastructure.persistence.migrate   # 套用 migrations/*.sql
 ```
 
 ## Layout
@@ -201,13 +203,14 @@ quantbot/
 │   │                                  BinanceCandleCsvParser, BinanceRateLimitGuard
 │   ├── coingecko/                     CoinGeckoReferencePriceSource
 │   ├── persistence/                   PostgresDatabase, TimescaleCandleRepository,
-│   │                                  migrations/*.sql
+│   │                                  migrate.py, migrations/*.sql
 │   ├── charting/                      Plotly*Renderer
 │   ├── configuration/                 YamlPipelineConfigurationLoader
 │   └── system_clock.py                SystemClock
 ├── entrypoints/                       backfill_command.py, ingest_pipeline_command.py,
 │                                      crossover_chart_command.py,
-│                                      smoothing_comparison_command.py（組裝根）
+│                                      smoothing_comparison_command.py,
+│                                      relative_strength_command.py（組裝根）
 └── tests/                             鏡射上述結構的黑箱測試
 ```
 
@@ -228,7 +231,7 @@ Day 02 的舊模組（`quantbot/ingest/`、`quantbot/plotting.py`）已隨文章
 
 ### 還沒落地的部分
 
-- `infrastructure/persistence/migrations/*.sql` 與 `migrate.py`（Day 07 的內容）還沒寫，所以 `TimescaleCandleRepository` 目前沒有可以跑的資料庫 schema。
+- `infrastructure/persistence/migrations/*.sql` 與 `migrate.py` 已完成並實跑過：三個 migration 套用後 `candles` 是 hypertable，`candles_5m` / `candles_1h` 兩個 continuous aggregate 建起來且 `materialized_only = true`。注意兩個踩過的坑：cagg 的 `GROUP BY` 必須寫完整的 `time_bucket(...)`（寫輸出別名 `open_time` 會被解析成來源欄位而失敗），且 cagg 要帶常數欄位 `'5m'::TEXT AS timeframe`，否則 `CandleRepository.read()` 的 `WHERE timeframe = $3` 永遠查不到。
 - `tests/infrastructure/persistence/` 的整合測試（真 PostgreSQL）還沒寫。**冪等、交易邊界、聚合正確性這三件事目前沒有任何測試在守**，這是現在最大的缺口，而且照本檔的測試策略，它們不能用替身驗。
-- `entrypoints/backfill_command.py` 的 `--store` 選項（Day 07 驗收標準第 2 項）還沒接上 repository。
+- `entrypoints/backfill_command.py` 的 `--store` 已接上 repository。它交出的是整段合併好的資料，分不出逐段來源，所以 `source` 一律寫 `'backfill'`；逐段標記 `archive` / `rest` 是 `ingest_pipeline_command` 的行為。
 - Day 09 之後的內容（Tick／掛單簿、特徵管線、策略引擎、回測、下單）都還沒開始。
