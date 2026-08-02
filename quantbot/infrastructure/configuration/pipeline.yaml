@@ -1,0 +1,17 @@
+defaults:
+  market: spot            # 現貨。永續合約的資料 NEVER 跟現貨混在同一張表
+  start: "2024-01-01"
+  max_concurrency: 4
+
+symbols:
+  - symbol: BTC/USDT
+    timeframes: ["1m", "1h"]
+  - symbol: ETH/USDT
+    timeframes: ["1m", "1h"]
+  - symbol: SOL/USDT
+    timeframes: ["1h"]
+
+crosscheck:
+  provider: coingecko
+  sample_days: 5
+  tolerance: 0.01         # 相對差超過 1% 就在報告裡標出來
