@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | 層面 | 選型 | 角色 / 備註 |
 | :--- | :--- | :--- |
-| 語言 | **Python 3.14** | `requires-python = ">=3.13"`；型別標註為強制（見 Conventions） |
+| 語言 | **Python 3.14** | `requires-python = ">=3.14"`；型別標註為強制（見 Conventions） |
 | 套件管理 | **uv** | `uv sync` / `uv run`；NEVER 用 pip / poetry / conda |
 | 資料處理 | **pandas 3.x + numpy** | 行情資料一律 `DataFrame`／`Series`，UTC `DatetimeIndex`；**NEVER 用 for loop 遍歷 K 線** |
 | HTTP | **httpx**（`AsyncClient`） | 批次檔下載與 REST 對照組。**NEVER 引入 aiohttp / requests**，同一專案只留一套 HTTP 客戶端 |
@@ -173,6 +173,7 @@ uv run lint-imports           # import-linter：檢查依賴方向
 docker compose -f docker/docker-compose.yml up -d   # 起 TimescaleDB
 uv run python -m quantbot.entrypoints.backfill_command --help
 uv run python -m quantbot.entrypoints.ingest_pipeline_command
+uv run python -m quantbot.entrypoints.crossover_chart_command --timeframe 1h
 ```
 
 ## Layout
@@ -203,16 +204,29 @@ quantbot/
 │   ├── charting/                      Plotly*Renderer
 │   ├── configuration/                 YamlPipelineConfigurationLoader
 │   └── system_clock.py                SystemClock
-├── entrypoints/                       backfill_command.py, ingest_pipeline_command.py（組裝根）
+├── entrypoints/                       backfill_command.py, ingest_pipeline_command.py,
+│                                      crossover_chart_command.py（組裝根）
 └── tests/                             鏡射上述結構的黑箱測試
 ```
 
-## 遷移狀態（2026-08-02）
+## 現況（2026-08-02）
 
-專案目前還是 Day 02 的扁平結構，尚未搬到上述分層。待辦：
+分層結構已就位，對應 iThome 系列 Day 01–08，四項檢查全過：
 
-1. `quantbot/ingest/binance_vision.py`（module-level 函式）→ 拆成 `domain/values/candle_columns.py`、`domain/entities/candle_series.py`、`infrastructure/binance/binance_candle_csv_parser.py`、`infrastructure/binance/binance_archive_candle_source.py`。
-2. `quantbot/ingest/binance.py` 目前 import **aiohttp**，但 `pyproject.toml` 裡沒有這個依賴，這個檔案跑不起來 → 改用 `httpx.AsyncClient` 並搬進 `infrastructure/binance/`。
-3. `quantbot/plotting.py` → `infrastructure/charting/plotly_candle_chart_renderer.py`（類別化）。
-4. `quantbot/config.py` 有一行沒用到的 `from dataclasses import Field`，移除。
-5. `pyproject.toml`：`requires-python` 是 `>=3.13` 但 `.python-version` 是 `3.14`，統一；dev group 補 `mypy`、`import-linter`。
+```
+uv run pytest          67 passed, 2 skipped
+uv run mypy            Success（strict，66 檔）
+uv run lint-imports    3 contracts kept
+uv run ruff check      All checks passed
+```
+
+Day 02 的舊模組（`quantbot/ingest/`、`quantbot/plotting.py`）已隨文章改寫一併移除，功能分別由
+`infrastructure/binance/binance_candle_csv_parser.py`、`infrastructure/charting/plotly_candle_chart_renderer.py`
+與 `entrypoints/fetch_candles_command.py` 接手。ruff 與 mypy 因此不再需要任何排除規則。
+
+### 還沒落地的部分
+
+- `infrastructure/persistence/migrations/*.sql` 與 `migrate.py`（Day 07 的內容）還沒寫，所以 `TimescaleCandleRepository` 目前沒有可以跑的資料庫 schema。
+- `tests/infrastructure/persistence/` 的整合測試（真 PostgreSQL）還沒寫。**冪等、交易邊界、聚合正確性這三件事目前沒有任何測試在守**，這是現在最大的缺口，而且照本檔的測試策略，它們不能用替身驗。
+- `entrypoints/backfill_command.py` 的 `--store` 選項（Day 07 驗收標準第 2 項）還沒接上 repository。
+- Day 09 之後的內容（Tick／掛單簿、特徵管線、策略引擎、回測、下單）都還沒開始。
