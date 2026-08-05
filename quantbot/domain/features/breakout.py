@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from quantbot.domain.features.prior_extreme import PriorExtreme
+from quantbot.domain.features.prior_extreme import PriorExtreme, parse_extreme_side
 from quantbot.domain.values.extreme_side import ExtremeSide
+from quantbot.domain.values.feature_parameters import FeatureParameters
 from quantbot.domain.values.market_input import MarketInput
 from quantbot.domain.values.market_view import MarketView
 
@@ -81,3 +82,17 @@ class Breakout:
             values - threshold if self.side is ExtremeSide.HIGH else threshold - values
         )
         return distance.clip(lower=0.0).rename(f"{self.name}_excess")
+
+
+class BreakoutBuilder:
+    """設定檔的 breakout。"""
+
+    @property
+    def kind(self) -> str:
+        return "breakout"
+
+    def build(self, parameters: FeatureParameters) -> Breakout:
+        return Breakout(
+            side=parse_extreme_side(parameters),
+            window=parameters.integer("window", 20),
+        )

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from quantbot.domain.features.volume_weighted_average_price import VWAP
+from quantbot.domain.features.volume_weighted_average_price import VWAP, VWAPBuilder
+from quantbot.domain.values.feature_parameters import FeatureParameters
 from quantbot.domain.values.market_input import MarketInput
 from quantbot.domain.values.market_view import MarketView
 
@@ -44,3 +45,14 @@ class VWAPDeviation:
         spread = self._vwap.standard_deviation(view)
         # 標準差為 0 的時候（整段只有一個成交價）偏離沒有定義，回 NaN 而不是 inf
         return ((price - centre) / spread.where(spread > 0)).rename(self.name)
+
+
+class VWAPDeviationBuilder:
+    """設定檔的 vwap_deviation。它包住一個 VWAP，所以參數跟 vwap 完全一樣。"""
+
+    @property
+    def kind(self) -> str:
+        return "vwap_deviation"
+
+    def build(self, parameters: FeatureParameters) -> VWAPDeviation:
+        return VWAPDeviation(VWAPBuilder().build(parameters))

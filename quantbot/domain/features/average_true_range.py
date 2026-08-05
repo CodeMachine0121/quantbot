@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 
 from quantbot.domain.indicators.rsi import WilderSmoother
+from quantbot.domain.values.feature_parameters import FeatureParameters
 from quantbot.domain.values.market_input import MarketInput
 from quantbot.domain.values.market_view import MarketView
 
@@ -72,3 +73,14 @@ class ATR:
         # skipna=False 是必要的：第 0 筆只有 high_low 有值，用預設的 skipna=True
         # 會挑出那個值，於是第 0 筆變成「高 − 低」而不是 NaN
         return candidates.max(axis=1, skipna=False).rename("true_range")
+
+
+class ATRBuilder:
+    """設定檔的 atr。"""
+
+    @property
+    def kind(self) -> str:
+        return "atr"
+
+    def build(self, parameters: FeatureParameters) -> ATR:
+        return ATR(parameters.integer("period", 14))

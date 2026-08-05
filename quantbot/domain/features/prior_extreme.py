@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 
 from quantbot.domain.values.extreme_side import ExtremeSide
+from quantbot.domain.values.feature_parameters import FeatureParameters
 from quantbot.domain.values.market_input import MarketInput
 from quantbot.domain.values.market_view import MarketView
 
@@ -51,3 +52,31 @@ class PriorExtreme:
         # 先 shift 再 rolling，兩者順序在數學上等價，但先 shift 讀起來更接近
         # 「拿前一根之前的資料算」這句話，也不會有人誤以為 rolling 之後還要再挪
         return self.side.rolling_extreme(values.shift(1), self.window).rename(self.name)
+
+
+def parse_extreme_side(parameters: FeatureParameters) -> ExtremeSide:
+    """設定檔的 side 字串轉 ExtremeSide。
+
+    三個 builder 共用它（前高、突破、流動性擺盪），所以它是模組層級的函式而不是
+    某個 builder 的方法——它不屬於其中任何一個。
+    """
+    raw = parameters.text("side", ExtremeSide.HIGH.value)
+    if raw not in tuple(ExtremeSide):
+        raise ValueError(
+            f"side 只能是 {[value.value for value in ExtremeSide]}，實得 {raw!r}"
+        )
+    return ExtremeSide(raw)
+
+
+class PriorExtremeBuilder:
+    """設定檔的 prior_extreme。"""
+
+    @property
+    def kind(self) -> str:
+        return "prior_extreme"
+
+    def build(self, parameters: FeatureParameters) -> PriorExtreme:
+        return PriorExtreme(
+            side=parse_extreme_side(parameters),
+            window=parameters.integer("window", 20),
+        )

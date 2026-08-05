@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from quantbot.domain.values.feature_parameters import FeatureParameters
 from quantbot.domain.values.market_input import MarketInput
 from quantbot.domain.values.market_view import MarketView
 from quantbot.domain.values.price_source import PriceSource
@@ -111,3 +112,42 @@ class VWAP:
         """
         times = pd.DatetimeIndex(index)
         return pd.Series(times.normalize(), index=index, name="session")
+
+
+class VWAPBuilder:
+    """設定檔的 vwap。mode 決定要不要看 window。"""
+
+    @property
+    def kind(self) -> str:
+        return "vwap"
+
+    def build(self, parameters: FeatureParameters) -> VWAP:
+        return VWAP(
+            mode=_vwap_mode(parameters),
+            window=parameters.integer("window", 20),
+            price_source=_price_source(parameters),
+        )
+
+
+def _vwap_mode(parameters: FeatureParameters) -> VWAPMode:
+    """設定檔的字串轉 VWAPMode。錯誤訊息要列出合法值，不然使用者只能猜。
+
+    這兩個 helper 是模組層級的函式，因為它們被同一個檔案的兩個 builder 共用，
+    而它們不屬於任何一個物件的行為——它們是設定檔字串到值物件的轉換。
+    """
+    raw = parameters.text("mode", VWAPMode.SESSION.value)
+    if raw not in tuple(VWAPMode):
+        raise ValueError(
+            f"mode 只能是 {[value.value for value in VWAPMode]}，實得 {raw!r}"
+        )
+    return VWAPMode(raw)
+
+
+def _price_source(parameters: FeatureParameters) -> PriceSource:
+    raw = parameters.text("price_source", PriceSource.TYPICAL.value)
+    if raw not in tuple(PriceSource):
+        raise ValueError(
+            f"price_source 只能是 {[value.value for value in PriceSource]}，"
+            f"實得 {raw!r}"
+        )
+    return PriceSource(raw)

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import pandas as pd
 
+from quantbot.domain.features.prior_extreme import parse_extreme_side
 from quantbot.domain.values.depth_columns import DepthColumns
 from quantbot.domain.values.extreme_side import ExtremeSide
+from quantbot.domain.values.feature_parameters import FeatureParameters
 from quantbot.domain.values.market_input import MarketInput
 from quantbot.domain.values.market_view import MarketView
 from quantbot.domain.values.trade_columns import TradeColumns
@@ -119,3 +121,17 @@ class LiquiditySwing:
         wanted = taker_buy if self.side is ExtremeSide.HIGH else ~taker_buy
         directional = trades[TradeColumns.QUANTITY].where(wanted, 0.0)
         return directional.rolling(window).sum()
+
+
+class LiquiditySwingBuilder:
+    """設定檔的 liquidity_swing。它需要三種原料，缺一種在管線檢查時就會被擋。"""
+
+    @property
+    def kind(self) -> str:
+        return "liquidity_swing"
+
+    def build(self, parameters: FeatureParameters) -> LiquiditySwing:
+        return LiquiditySwing(
+            side=parse_extreme_side(parameters),
+            window_seconds=parameters.number("window_seconds", 5.0),
+        )

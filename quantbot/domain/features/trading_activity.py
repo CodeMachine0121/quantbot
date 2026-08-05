@@ -5,6 +5,7 @@ import pandas as pd
 
 from quantbot.domain.values.activity_baseline import ActivityBaseline
 from quantbot.domain.values.activity_measure import ActivityMeasure
+from quantbot.domain.values.feature_parameters import FeatureParameters
 from quantbot.domain.values.market_input import MarketInput
 from quantbot.domain.values.market_view import MarketView
 
@@ -88,3 +89,30 @@ class TradingActivity:
             history.groupby(hour).expanding().std().reset_index(level=0, drop=True)
         )
         return (values - mean) / deviation.where(deviation > 0)
+
+
+class TradingActivityBuilder:
+    """設定檔的 activity。measure 與 baseline 都是列舉，錯字要在載入時就擋掉。"""
+
+    @property
+    def kind(self) -> str:
+        return "activity"
+
+    def build(self, parameters: FeatureParameters) -> TradingActivity:
+        measure = parameters.text("measure", ActivityMeasure.TRADE_COUNT.value)
+        if measure not in tuple(ActivityMeasure):
+            raise ValueError(
+                f"measure 只能是 {[value.value for value in ActivityMeasure]}，"
+                f"實得 {measure!r}"
+            )
+        baseline = parameters.text("baseline", ActivityBaseline.ROLLING.value)
+        if baseline not in tuple(ActivityBaseline):
+            raise ValueError(
+                f"baseline 只能是 {[value.value for value in ActivityBaseline]}，"
+                f"實得 {baseline!r}"
+            )
+        return TradingActivity(
+            measure=ActivityMeasure(measure),
+            baseline=ActivityBaseline(baseline),
+            window=parameters.integer("window", 60),
+        )

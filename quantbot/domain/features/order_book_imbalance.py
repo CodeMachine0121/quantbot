@@ -5,6 +5,7 @@ import pandas as pd
 
 from quantbot.domain.values.depth_aggregation import DepthAggregation
 from quantbot.domain.values.depth_columns import DepthColumns
+from quantbot.domain.values.feature_parameters import FeatureParameters
 from quantbot.domain.values.market_input import MarketInput
 from quantbot.domain.values.market_view import MarketView
 
@@ -94,3 +95,23 @@ class OrderBookImbalance:
         # 兩側都空的時候補 NaN 而不是 0：0 的意思是「兩側一樣多」，
         # 而「兩側都沒有掛單」是另一回事，那時候這個特徵沒有定義。
         return ((bid - ask) / total).where(total > 0).rename(f"obi_{self.depth_level}")
+
+
+class OrderBookImbalanceBuilder:
+    """設定檔的 obi。深度只能是錄過的那幾檔，聚合只能是 mean 或 last。"""
+
+    @property
+    def kind(self) -> str:
+        return "obi"
+
+    def build(self, parameters: FeatureParameters) -> OrderBookImbalance:
+        aggregation = parameters.text("aggregation", DepthAggregation.MEAN.value)
+        if aggregation not in tuple(DepthAggregation):
+            raise ValueError(
+                f"aggregation 只能是 {[value.value for value in DepthAggregation]}，"
+                f"實得 {aggregation!r}"
+            )
+        return OrderBookImbalance(
+            parameters.integer("depth_level", DepthColumns.LEVELS[0]),
+            aggregation=DepthAggregation(aggregation),
+        )

@@ -5,6 +5,7 @@ import pandas as pd
 
 from quantbot.domain.entities.candle_series import CandleSeries
 from quantbot.domain.services.volume_profile_service import VolumeProfileService
+from quantbot.domain.values.feature_parameters import FeatureParameters
 from quantbot.domain.values.market_input import MarketInput
 from quantbot.domain.values.market_view import MarketView
 
@@ -76,3 +77,19 @@ class DistanceToPointOfControl:
         profile = self._service.from_candles(CandleSeries(candles.instrument, history))
         point_of_control = profile.point_of_control
         return (close - point_of_control) / point_of_control
+
+
+class DistanceToPointOfControlBuilder:
+    """設定檔的 distance_to_poc。分桶數影響 POC，所以它也是設定得到的參數。"""
+
+    @property
+    def kind(self) -> str:
+        return "distance_to_poc"
+
+    def build(self, parameters: FeatureParameters) -> DistanceToPointOfControl:
+        return DistanceToPointOfControl(
+            window_days=parameters.integer("window_days", 5),
+            service=VolumeProfileService(
+                bucket_count=parameters.integer("bucket_count", 100)
+            ),
+        )
