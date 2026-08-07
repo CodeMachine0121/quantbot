@@ -1,0 +1,48 @@
+# quantbot/infrastructure/configuration/features.yaml
+# 第二階段的所有特徵，一份設定全部算出來。
+#
+# 參數跟 kind 平放在同一層。沒寫的參數用 builder 的預設值，
+# 而拼錯的參數名會在載入時就報錯（FeatureParameters.ensure_used）。
+features:
+  # Day 04-06 的三個指標，透過轉接器進到同一套介面
+  - kind: sma
+    period: 20
+  - kind: ema
+    period: 12
+  - kind: ema
+    period: 26
+  - kind: rsi
+    period: 14
+
+  # Day 11：成交量加權
+  - kind: vwap
+    mode: session
+  - kind: vwap_deviation
+    mode: session
+
+  # Day 12：活躍度與波動
+  - kind: activity
+    measure: trade_count
+    baseline: rolling
+    window: 168
+  - kind: activity
+    measure: absolute_return
+    baseline: rolling
+    window: 168
+  - kind: atr
+    period: 14
+
+  # Day 13：前高與突破
+  - kind: prior_extreme
+    side: high
+    window: 20
+  - kind: breakout
+    side: high
+    window: 20
+  - kind: breakout
+    side: low
+    window: 20
+
+  # Day 14：籌碼密集區
+  - kind: distance_to_poc
+    window_days: 5

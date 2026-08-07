@@ -7,6 +7,7 @@ from types import MappingProxyType
 from typing import ClassVar
 
 from quantbot.domain.values.instrument import Instrument
+from quantbot.domain.values.listing import Listing
 from quantbot.domain.values.market import Market
 
 
@@ -31,6 +32,20 @@ class BinanceArchiveUrlBuilder:
     def daily(self, instrument: Instrument, day: date) -> str:
         """月檔還沒出來的那幾天用日檔補。"""
         return self._archive_url(instrument, "daily", f"{day:%Y-%m-%d}")
+
+    def daily_agg_trades(self, listing: Listing, day: date) -> str:
+        """逐筆成交只有日檔這條路。
+
+        月檔存在，但 BTC/USDT 現貨一個月的 aggTrades zip 接近 500 MB，而要分析的
+        通常是幾天，所以這裡不提供 monthly_agg_trades()——**沒有這個方法本身就是
+        設計決定**，不是還沒寫。要一個月的話就下三十個日檔，併發下載本來就有。
+
+        網址裡沒有 timeframe：成交是事件，不是被切好的區間，所以它吃 Listing。
+        """
+        prefix = self.MARKET_PREFIXES[listing.market]
+        symbol = listing.native_symbol
+        filename = f"{symbol}-aggTrades-{day:%Y-%m-%d}.zip"
+        return f"{self.BASE_URL}/{prefix}/daily/aggTrades/{symbol}/{filename}"
 
     @staticmethod
     def checksum(archive_url: str) -> str:

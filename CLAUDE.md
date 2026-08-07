@@ -64,12 +64,16 @@ Python 有兩種「介面」，用途不同，**NEVER 混用**：
 
 ### Domain 內部結構
 
-domain 只依「種類」分六個資料夾，不出現概念資料夾（不會有 `ingest/`、`backtest/`）：
+domain 只依「種類」分七個資料夾，不出現概念資料夾（不會有 `ingest/`、`backtest/`）：
 
 - `values/` — value object：**frozen dataclass 或 StrEnum**，不可變、可有推導用的 property 與方法，但**沒有 I/O**。例：`Instrument`、`Timeframe`、`Market`、`TimeRange`、`CandleColumns`、`BackfillPlan`、`Gap`、`SourceKind`。
 - `entities/` — 充血實體（含行為的類別）。例：`CandleSeries`（包住 `DataFrame`，負責去重、合併、切片、丟未收盤的那一根）。
-- `indicators/` — `Indicator` ABC 與其子類別（`SMA`、`EMA`、`RSI`…）＋ `INDICATORS` 註冊表。指標是純計算，屬於 domain。
-- `services/` — **Domain Service**：跨 value/entity 的計算與編排，**純函數性、無 I/O、不吃 `Protocol`**。命名 `XxxService`，**一個檔案一個 service 類別**。例：`BackfillPlanningService`、`SourceRoutingService`、`DataIntegrityService`、`CandleSanitationService`、`PriceCrossCheckService`。
+- `indicators/` — `Indicator` ABC 與其子類別（`SMA`、`EMA`、`RSI`）＋ `WilderSmoother` ＋ `INDICATORS` 註冊表。**契約很窄：吃 K 線的一個欄位、回一條序列**，而那個窄契約正是 `compute()` 能統一處理欄位檢查與命名的前提。
+- `features/` — `Feature` `Protocol` 的實作 ＋ 每個特徵的 `*Builder` ＋ `FeatureRegistry` ＋ `FeaturePipeline`。跟 `indicators/` 的差別是**輸入**：特徵吃 `MarketView`（K 線、逐筆成交、掛單簿的任意組合），指標只吃 K 線的一欄。`CandleIndicatorFeature` 是兩者之間的轉接器——`Indicator` 的簽章 NEVER 為了統一介面而放寬。
+  - 為什麼是 `Protocol` 而不是 ABC：從掛單簿算的、從成交算的、從 K 線算的特徵之間沒有一行共用實作，所以沒有骨架可分。
+  - 為什麼有 `*Builder` 這一層：註冊表若直接放類別再 `cls(**parameters)` 就是**反射式分派**（本檔禁用）。builder 讓「這個 kind 需要哪些參數、列舉的合法值是什麼」變成 mypy 檢查得到的普通程式碼。
+- `services/` — **Domain Service**：跨 value/entity 的計算與編排，**純函數性、無 I/O、不吃 `Protocol`**。命名 `XxxService`，**一個檔案一個 service 類別**。例：`BackfillPlanningService`、`SourceRoutingService`、`DataIntegrityService`、`CandleSanitationService`、`PriceCrossCheckService`、`CandleAgreementService`、`OrderBookSequenceService`、`PredictivePowerService`、`VolumeProfileService`、`BreakoutLabellingService`、`BreakoutStatisticsService`。
+  - **`BreakoutLabellingService` 是唯一刻意使用未來資料的東西**，因為它產出的是**標籤**而不是特徵。界線靠型別維持：它不實作 `Feature`、不進 `FeatureRegistry`，所以策略路徑拿不到它。新增這類分析工具時 MUST 沿用同一個界線。
 - `dto/` — **只用於報告類回傳形狀**（`Dto` 後綴的 frozen dataclass）。例：`DataIntegrityReportDto`。行情資料**不轉 DTO**——它以 `CandleSeries` 跨層，因為主體是 `DataFrame`，每次轉一層是純儀式。
 - `interfaces/` — 對外 `Protocol`，一檔一介面。
 
@@ -185,53 +189,119 @@ uv run python -m quantbot.infrastructure.persistence.migrate   # 套用 migratio
 quantbot/
 ├── config.py                          Settings（pydantic-settings）
 ├── domain/
-│   ├── values/                        Instrument, Timeframe, Market, TimeRange,
-│   │                                  CandleColumns, BackfillPlan, Gap, SourceKind
-│   ├── entities/candle_series.py      CandleSeries（充血）
+│   ├── values/                        Instrument, Listing, Timeframe, Market, TimeRange,
+│   │                                  CandleColumns, TradeColumns, DepthColumns, Gap,
+│   │                                  SourceKind, TakerSide, PriceLevel, SequenceDecision,
+│   │                                  OrderBookSnapshot/Update, OrderBookDepthSummary,
+│   │                                  MarketInput, MarketView, VolumeProfile,
+│   │                                  FeatureSpecification, FeatureParameters,
+│   │                                  ExtremeSide, BreakoutLabel, VWAPMode, PriceSource,
+│   │                                  ActivityMeasure, ActivityBaseline, DepthAggregation
+│   ├── entities/                      CandleSeries, TradeSeries, DepthSeries,
+│   │                                  OrderBook（唯一有狀態的 entity）
 │   ├── indicators/                    Indicator(ABC), SMA, EMA, RSI,
 │   │                                  WilderSmoother, CrossoverSignals, INDICATORS
+│   ├── features/                      OrderBookImbalance, VWAP, VWAPDeviation, ATR,
+│   │                                  TradingActivity, PriorExtreme, Breakout,
+│   │                                  LiquiditySwing, DistanceToPointOfControl,
+│   │                                  CandleIndicatorFeature（轉接器）,
+│   │                                  FeatureRegistry, FeaturePipeline
 │   ├── services/                      BackfillPlanningService, SourceRoutingService,
 │   │                                  DataIntegrityService, CandleSanitationService,
-│   │                                  PriceCrossCheckService
-│   ├── dto/                           DataIntegrityReportDto, PriceCrossCheckReportDto
-│   └── interfaces/                    CandleSource, CandleRepository, CandleParser,
-│                                      ReferencePriceSource, Clock（一檔一 Protocol）
-├── application/                       BackfillCandlesApplication, IngestPipelineApplication
+│   │                                  PriceCrossCheckService, CandleAgreementService,
+│   │                                  OrderBookSequenceService, PredictivePowerService,
+│   │                                  VolumeProfileService, BreakoutLabellingService,
+│   │                                  BreakoutStatisticsService
+│   ├── dto/                           DataIntegrityReportDto, PriceCrossCheckReportDto,
+│   │                                  CandleAgreementReportDto, TradeIngestReportDto,
+│   │                                  RecordingReportDto, PredictivePowerReportDto,
+│   │                                  ImbalancePowerReportDto, VolumeProfileReportDto,
+│   │                                  BreakoutStatisticsReportDto
+│   └── interfaces/                    CandleSource/Repository/Parser, TradeSource/
+│                                      Repository/Parser/Stream, DepthRepository,
+│                                      OrderBookStream, OrderBookSnapshotSource,
+│                                      ReferencePriceSource, Clock, Feature,
+│                                      FeatureBuilder（一檔一 Protocol）
+├── application/                       BackfillCandlesApplication, IngestPipelineApplication,
+│                                      BackfillTradesApplication,
+│                                      RecordMicrostructureApplication,
+│                                      EvaluateImbalancePowerApplication,
+│                                      AnalyzeBreakoutsApplication,
+│                                      CompareVolumeProfilesApplication,
+│                                      ComputeFeaturesApplication
 ├── infrastructure/
-│   ├── binance/                       BinanceArchiveUrlBuilder, BinanceArchiveDownloader,
-│   │                                  BinanceArchiveCandleSource, BinanceRestCandleSource,
-│   │                                  BinanceCandleCsvParser, BinanceRateLimitGuard
+│   ├── binance/                       BinanceArchiveUrlBuilder/Downloader,
+│   │                                  BinanceArchiveCandleSource/TradeSource,
+│   │                                  BinanceRestCandleSource, BinanceCandleCsvParser,
+│   │                                  BinanceAggTradeCsvParser, BinanceRateLimitGuard,
+│   │                                  BinanceStreamUrlBuilder/PayloadParser,
+│   │                                  BinanceWebsocketMessageSource,
+│   │                                  BinanceWebsocketTradeStream/OrderBookStream,
+│   │                                  BinanceRestOrderBookSnapshotSource,
+│   │                                  BinanceSnapshotRateGuard
 │   ├── coingecko/                     CoinGeckoReferencePriceSource
 │   ├── persistence/                   PostgresDatabase, TimescaleCandleRepository,
+│   │                                  TimescaleTradeRepository, TimescaleDepthRepository,
 │   │                                  migrate.py, migrations/*.sql
 │   ├── charting/                      Plotly*Renderer
-│   ├── configuration/                 YamlPipelineConfigurationLoader
+│   ├── configuration/                 YamlPipelineConfigurationLoader,
+│   │                                  YamlFeatureSpecificationLoader,
+│   │                                  pipeline.yaml, features.yaml
+│   ├── reporting/                     Text*ReportRenderer
 │   └── system_clock.py                SystemClock
-├── entrypoints/                       backfill_command.py, ingest_pipeline_command.py,
-│                                      crossover_chart_command.py,
-│                                      smoothing_comparison_command.py,
-│                                      relative_strength_command.py（組裝根）
+├── entrypoints/                       backfill_command, ingest_pipeline_command,
+│                                      crossover_chart_command,
+│                                      smoothing_comparison_command,
+│                                      relative_strength_command, fetch_candles_command,
+│                                      backfill_trades_command,
+│                                      record_microstructure_command,
+│                                      imbalance_power_command, vwap_command,
+│                                      activity_command, breakout_command,
+│                                      liquidity_swing_command, volume_profile_command,
+│                                      features_command（組裝根）
 └── tests/                             鏡射上述結構的黑箱測試
 ```
 
-## 現況（2026-08-02）
 
-分層結構已就位，對應 iThome 系列 Day 01–08，四項檢查全過：
+## 現況（2026-08-05）
+
+分層結構已就位，對應 iThome 系列 **Day 01–15**（第一、二階段），四項檢查全過：
 
 ```
-uv run pytest          67 passed, 2 skipped
-uv run mypy            Success（strict，66 檔）
+uv run pytest          248 passed, 2 skipped
+uv run mypy            Success（strict，168 檔）
 uv run lint-imports    3 contracts kept
 uv run ruff check      All checks passed
 ```
 
-Day 02 的舊模組（`quantbot/ingest/`、`quantbot/plotting.py`）已隨文章改寫一併移除，功能分別由
-`infrastructure/binance/binance_candle_csv_parser.py`、`infrastructure/charting/plotly_candle_chart_renderer.py`
-與 `entrypoints/fetch_candles_command.py` 接手。ruff 與 mypy 因此不再需要任何排除規則。
+Day 09–15 在分支 `feat/microstructure-day-09-15`，七個 commit（一天一個），每個 commit 的樹狀態都可執行、可檢查。
+
+### Day 09–15 新增的資料路徑
+
+| 路徑 | 來源 | 落地 |
+| :--- | :--- | :--- |
+| 歷史逐筆成交 | `data.binance.vision` 的 `aggTrades` **日檔**（月檔約 498 MB，日檔約 11 MB） | `agg_trades` hypertable，一天一個 chunk |
+| 即時成交與掛單簿 | Binance WebSocket 合併訂閱（`aggTrade` ＋ `depth@100ms`） | `agg_trades` ＋ `order_book_depth` |
+| 掛單簿快照 | REST `/api/v3/depth`，前面掛 `BinanceSnapshotRateGuard` | 不落地，只用來重建本地簿子 |
+
+**現貨沒有掛單簿的歷史批次檔**（`data.binance.vision` 的 spot 只有 `klines`、`aggTrades`、`trades`；`bookTicker`／`bookDepth` 只有 `futures/um` 有，而現貨與永續 NEVER 混用）。所以掛單簿只有自己錄的那幾段，而任何依賴它的特徵都只能在那些區間上驗證。
+
+### 這幾天實跑才發現、而且以後會再犯的四件事
+
+1. **先訂閱、後拉快照。** 反過來會在兩者之間留下空窗，導致每次啟動必然多一次重取快照（實測固定為 1，改正後為 0）。
+2. **倒緩衝要有時間上限，不能只看列數。** 深度摘要每秒一列，湊滿 5,000 列要 83 分鐘；串流資料掉了就是掉了。
+3. **成交的時間戳不是唯一的。** `reindex(method="ffill")` 在重複索引上會丟 `ValueError`，要用 `merge_asof`。合成測試資料（每秒一筆）測不到。
+4. **`shift()` 只認得「第幾格」，不認得時間。** 不規則取樣（掛單簿）上要配 `maximum_step`，否則一段跨越錄製空白的「往後一秒」實際上跨了二十幾分鐘。
+
+### 與文章的同步約束
+
+- **NEVER 修改 `src/content/blogs/ithome/2026-02/Day 00`–`Day 08` 的文章內容**（已發佈）。所以新的一天 NEVER 搬動那八篇展示過的檔案或類別——`WilderSmoother` 留在 `rsi.py`、由 `ATR` 直接 import，就是這條約束的結果。
+- `domain/` 現在有**七個**資料夾（多了 `features/`），而 Day 01 的文章寫六個。這是刻意不修正的差異，記在這裡。
 
 ### 還沒落地的部分
 
-- `infrastructure/persistence/migrations/*.sql` 與 `migrate.py` 已完成並實跑過：三個 migration 套用後 `candles` 是 hypertable，`candles_5m` / `candles_1h` 兩個 continuous aggregate 建起來且 `materialized_only = true`。注意兩個踩過的坑：cagg 的 `GROUP BY` 必須寫完整的 `time_bucket(...)`（寫輸出別名 `open_time` 會被解析成來源欄位而失敗），且 cagg 要帶常數欄位 `'5m'::TEXT AS timeframe`，否則 `CandleRepository.read()` 的 `WHERE timeframe = $3` 永遠查不到。
-- `tests/infrastructure/persistence/` 的整合測試（真 PostgreSQL）還沒寫。**冪等、交易邊界、聚合正確性這三件事目前沒有任何測試在守**，這是現在最大的缺口，而且照本檔的測試策略，它們不能用替身驗。
-- `entrypoints/backfill_command.py` 的 `--store` 已接上 repository。它交出的是整段合併好的資料，分不出逐段來源，所以 `source` 一律寫 `'backfill'`；逐段標記 `archive` / `rest` 是 `ingest_pipeline_command` 的行為。
-- Day 09 之後的內容（Tick／掛單簿、特徵管線、策略引擎、回測、下單）都還沒開始。
+- `tests/infrastructure/persistence/` 的整合測試（真 PostgreSQL）還沒寫。**冪等、交易邊界、聚合正確性這三件事目前沒有任何測試在守**，這是現在最大的缺口，而且照本檔的測試策略，它們不能用替身驗。新增的 `agg_trades` 與 `order_book_depth` 兩張表同樣沒有整合測試——它們的冪等靠複合主鍵 ＋ `ON CONFLICT DO NOTHING`，只有實跑驗過（同一天重跑寫入 0 列）。
+- `migrations/` 的四個檔案都實跑過。cagg 的兩個坑仍然適用：`GROUP BY` 必須寫完整的 `time_bucket(...)`（寫輸出別名 `open_time` 會被解析成來源欄位而失敗），且 cagg 要帶常數欄位 `'5m'::TEXT AS timeframe`，否則 `CandleRepository.read()` 的 `WHERE timeframe = $3` 永遠查不到。
+- `entrypoints/backfill_command.py` 的 `--store` 交出的是整段合併好的資料，分不出逐段來源，所以 `source` 一律寫 `'backfill'`；逐段標記 `archive` / `rest` 是 `ingest_pipeline_command` 的行為。
+- `DistanceToPointOfControl` 是目前唯一不能向量化的特徵（每一根都要重算一次分布）。它只在離線分析路徑上，但如果之後要進即時路徑，這裡會是瓶頸。
+- Day 16 之後的內容（策略積木庫、回測、成本模型、下單、監控）都還沒開始。`FeatureRegistry` 就是 Day 16 的原料來源，介面已訂死。
