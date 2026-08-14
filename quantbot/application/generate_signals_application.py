@@ -35,6 +35,15 @@ class GenerateSignalsApplication:
         self._assembly = assembly
         self._engine = engine
 
+    @property
+    def engine(self) -> StrategyEngine:
+        """讓上層用例拿同一個引擎跑別的策略（例如 BuyAndHold 基準）。
+
+        暴露它而不是讓上層自己建一個，是為了保證位移設定一致：一個用 delay=1、
+        一個用 delay=0 的比較是沒有意義的，而那種錯誤不會有任何訊息。
+        """
+        return self._engine
+
     async def run(
         self,
         specification: StrategySpecification,
