@@ -55,16 +55,16 @@ Python 有兩種「介面」，用途不同，**NEVER 混用**：
 | 機制 | 語意 | 對應 Go | 用在哪 |
 | :--- | :--- | :--- | :--- |
 | `typing.Protocol` | **結構型**：實作不繼承、不 import 抽象，型別檢查器在注入點驗證 | 就是 Go 的隱式介面 | **所有對外相依**：`CandleSource`、`CandleRepository`、`CandleParser`、`ReferencePriceSource`、`Clock` |
-| `abc.ABC` ＋ `@abstractmethod` | **名義型**：實作必須繼承，可帶共用實作（template method） | Java/C# 的 `implements` | 同一家族要共用骨架：`Indicator` |
+| `abc.ABC` ＋ `@abstractmethod` | **名義型**：實作必須繼承，可帶共用實作（template method） | Java/C# 的 `implements` | 同一家族要共用骨架：`Indicator`、`Condition` |
 
 - 對外介面 **MUST** 是 `Protocol`，放 `domain/interfaces/`，**一個檔案一個 Protocol**。
 - **NEVER 用 `@runtime_checkable` ＋ `isinstance` 驗介面**：它只比對方法名、不比對簽章，給的是假的安全感。相容性由 `mypy` 在組裝點檢查。
-- `Indicator` 是 ABC（要強制 `name` 與 `_compute`、並共用 `compute()` 的契約），這是唯一的 ABC 家族。要新增一種指標就繼承它。
+- ABC 家族有兩個：`Indicator`（強制 `name` 與 `_compute`、共用 `compute()` 的契約）與 `Condition`（強制 `name`／`required_features`／`warmup_bar_count`／`_evaluate`、共用 `evaluate()` 的契約與 `__and__`／`__or__`／`__invert__` 三個組合運算子）。要新增一種指標或條件就繼承對應的那一個。
 - **實例檔內 NEVER 宣告 Protocol**；介面只住在 `domain/interfaces/`。**不使用「port」一詞或資料夾。**
 
 ### Domain 內部結構
 
-domain 只依「種類」分七個資料夾，不出現概念資料夾（不會有 `ingest/`、`backtest/`）：
+domain 只依「種類」分八個資料夾，不出現概念資料夾（不會有 `ingest/`、`backtest/`）：
 
 - `values/` — value object：**frozen dataclass 或 StrEnum**，不可變、可有推導用的 property 與方法，但**沒有 I/O**。例：`Instrument`、`Timeframe`、`Market`、`TimeRange`、`CandleColumns`、`BackfillPlan`、`Gap`、`SourceKind`。
 - `entities/` — 充血實體（含行為的類別）。例：`CandleSeries`（包住 `DataFrame`，負責去重、合併、切片、丟未收盤的那一根）。
@@ -72,6 +72,9 @@ domain 只依「種類」分七個資料夾，不出現概念資料夾（不會�
 - `features/` — `Feature` `Protocol` 的實作 ＋ 每個特徵的 `*Builder` ＋ `FeatureRegistry` ＋ `FeaturePipeline`。跟 `indicators/` 的差別是**輸入**：特徵吃 `MarketView`（K 線、逐筆成交、掛單簿的任意組合），指標只吃 K 線的一欄。`CandleIndicatorFeature` 是兩者之間的轉接器——`Indicator` 的簽章 NEVER 為了統一介面而放寬。
   - 為什麼是 `Protocol` 而不是 ABC：從掛單簿算的、從成交算的、從 K 線算的特徵之間沒有一行共用實作，所以沒有骨架可分。
   - 為什麼有 `*Builder` 這一層：註冊表若直接放類別再 `cls(**parameters)` 就是**反射式分派**（本檔禁用）。builder 讓「這個 kind 需要哪些參數、列舉的合法值是什麼」變成 mypy 檢查得到的普通程式碼。
+- `strategies/` — `Condition` ABC ＋ 三個組合條件（`AllOf`／`AnyOf`／`Not`）＋ 葉條件（`Threshold`、`FeatureComparison`、`Crossover`、`Range`、`Event`、`Always`／`Never`）＋ `Strategy` ＋ `StrategyEngine`。跟 `features/` 的差別是**輸入與輸出**：特徵吃 `MarketView` 回一條數值序列，條件吃**算好的特徵表**回一條布林序列。
+  - 為什麼是 ABC 而不是 Protocol：這個家族有共用實作，而且比 `Indicator` 更多——`evaluate()` 的欄位檢查與布林化、三個運算子、`describe()`，全部只寫一份。
+  - **訊號位移（`shift`）只發生在 `StrategyEngine._delayed()`**，整個專案沒有第二個地方做這件事。條件一律回報「第 t 根的事實」。
 - `services/` — **Domain Service**：跨 value/entity 的計算與編排，**純函數性、無 I/O、不吃 `Protocol`**。命名 `XxxService`，**一個檔案一個 service 類別**。例：`BackfillPlanningService`、`SourceRoutingService`、`DataIntegrityService`、`CandleSanitationService`、`PriceCrossCheckService`、`CandleAgreementService`、`OrderBookSequenceService`、`PredictivePowerService`、`VolumeProfileService`、`BreakoutLabellingService`、`BreakoutStatisticsService`。
   - **`BreakoutLabellingService` 是唯一刻意使用未來資料的東西**，因為它產出的是**標籤**而不是特徵。界線靠型別維持：它不實作 `Feature`、不進 `FeatureRegistry`，所以策略路徑拿不到它。新增這類分析工具時 MUST 沿用同一個界線。
 - `dto/` — **只用於報告類回傳形狀**（`Dto` 後綴的 frozen dataclass）。例：`DataIntegrityReportDto`。行情資料**不轉 DTO**——它以 `CandleSeries` 跨層，因為主體是 `DataFrame`，每次轉一層是純儀式。
