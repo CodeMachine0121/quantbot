@@ -26,3 +26,11 @@ class PositionDirection(StrEnum):
         if self is PositionDirection.SHORT:
             return -1.0
         return 0.0
+
+    @classmethod
+    def parse(cls, raw: str) -> PositionDirection:
+        if raw not in tuple(cls):
+            raise ValueError(
+                f"direction 只能是 {[value.value for value in cls]}，實得 {raw!r}"
+            )
+        return cls(raw)

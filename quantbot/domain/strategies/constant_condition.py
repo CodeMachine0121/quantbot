@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 
 from quantbot.domain.strategies.condition import Condition
+from quantbot.domain.values.feature_parameters import FeatureParameters
 
 
 class Always(Condition):
@@ -50,3 +51,37 @@ class Never(Condition):
 
     def _evaluate(self, table: pd.DataFrame) -> pd.Series:
         return pd.Series(False, index=table.index)
+
+
+class AlwaysBuilder:
+    """設定檔的 always。"""
+
+    @property
+    def kind(self) -> str:
+        return "always"
+
+    def build(
+        self,
+        parameters: FeatureParameters,  # noqa: ARG002
+        children: tuple[Condition, ...],
+    ) -> Always:
+        if children:
+            raise ValueError("always 是葉條件，不接子節點")
+        return Always()
+
+
+class NeverBuilder:
+    """設定檔的 never。"""
+
+    @property
+    def kind(self) -> str:
+        return "never"
+
+    def build(
+        self,
+        parameters: FeatureParameters,  # noqa: ARG002
+        children: tuple[Condition, ...],
+    ) -> Never:
+        if children:
+            raise ValueError("never 是葉條件，不接子節點")
+        return Never()

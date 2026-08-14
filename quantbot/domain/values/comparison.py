@@ -43,3 +43,12 @@ class Comparison(StrEnum):
             Comparison.AT_LEAST: ">=",
             Comparison.AT_MOST: "<=",
         }[self]
+
+    @classmethod
+    def parse(cls, raw: str) -> Comparison:
+        """設定檔的字串轉成值。錯誤訊息要列出四個合法值，不然使用者只能猜。"""
+        if raw not in tuple(cls):
+            raise ValueError(
+                f"comparison 只能是 {[value.value for value in cls]}，實得 {raw!r}"
+            )
+        return cls(raw)

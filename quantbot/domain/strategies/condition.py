@@ -5,6 +5,8 @@ from abc import ABC, abstractmethod
 
 import pandas as pd
 
+from quantbot.domain.values.feature_parameters import FeatureParameters
+
 
 class Condition(ABC):
     """一個條件：吃一張特徵表，回一條與它同 index 的布林序列。
@@ -221,3 +223,54 @@ class Not(Condition):
 
     def _evaluate(self, table: pd.DataFrame) -> pd.Series:
         return ~self._condition.evaluate(table)
+
+
+class AllOfBuilder:
+    """設定檔的 all。它的「參數」就是它的子節點。"""
+
+    @property
+    def kind(self) -> str:
+        return "all"
+
+    def build(
+        self,
+        parameters: FeatureParameters,  # noqa: ARG002
+        children: tuple[Condition, ...],
+    ) -> AllOf:
+        if not children:
+            raise ValueError("all 至少要有一個子節點")
+        return AllOf(*children)
+
+
+class AnyOfBuilder:
+    """設定檔的 any。"""
+
+    @property
+    def kind(self) -> str:
+        return "any"
+
+    def build(
+        self,
+        parameters: FeatureParameters,  # noqa: ARG002
+        children: tuple[Condition, ...],
+    ) -> AnyOf:
+        if not children:
+            raise ValueError("any 至少要有一個子節點")
+        return AnyOf(*children)
+
+
+class NotBuilder:
+    """設定檔的 not。它只接一個子節點，接兩個是設定檔寫錯了。"""
+
+    @property
+    def kind(self) -> str:
+        return "not"
+
+    def build(
+        self,
+        parameters: FeatureParameters,  # noqa: ARG002
+        children: tuple[Condition, ...],
+    ) -> Not:
+        if len(children) != 1:
+            raise ValueError(f"not 只能有一個子節點，實得 {len(children)} 個")
+        return Not(children[0])

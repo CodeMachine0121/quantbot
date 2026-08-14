@@ -6,6 +6,7 @@ import pandas as pd
 from quantbot.domain.indicators.crossover_signals import CrossoverSignals
 from quantbot.domain.strategies.condition import Condition
 from quantbot.domain.values.cross_direction import CrossDirection
+from quantbot.domain.values.feature_parameters import FeatureParameters
 
 
 class Crossover(Condition):
@@ -46,3 +47,22 @@ class Crossover(Condition):
     def _evaluate(self, table: pd.DataFrame) -> pd.Series:
         signals = CrossoverSignals(table[self._fast], table[self._slow])
         return signals.golden if self._direction is CrossDirection.UP else signals.death
+
+
+class CrossoverBuilder:
+    """設定檔的 crossover。"""
+
+    @property
+    def kind(self) -> str:
+        return "crossover"
+
+    def build(
+        self, parameters: FeatureParameters, children: tuple[Condition, ...]
+    ) -> Crossover:
+        if children:
+            raise ValueError("crossover 是葉條件，不接子節點")
+        return Crossover(
+            fast=parameters.text("fast"),
+            direction=CrossDirection.parse(parameters.text("direction")),
+            slow=parameters.text("slow"),
+        )

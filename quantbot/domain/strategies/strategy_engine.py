@@ -6,6 +6,7 @@ import pandas as pd
 
 from quantbot.domain.strategies.strategy import Strategy
 from quantbot.domain.values.holding_rules import HoldingRules
+from quantbot.domain.values.strategy_signals import StrategySignals
 
 
 class StrategyEngine:
@@ -57,6 +58,22 @@ class StrategyEngine:
             index=table.index,
             dtype="float64",
             name=f"position_{strategy.name}",
+        )
+
+    def signals(self, strategy: Strategy, table: pd.DataFrame) -> StrategySignals:
+        """跟 positions() 算同一件事，但把三棵樹的原始判斷一起交出去。
+
+        報告與圖表要的是「進場訊號幾根、被過濾掉幾根、最後成交幾筆」這三個數字，
+        而只有部位序列的話這三者分不出來。條件在這裡會被再算一次（positions()
+        內部也算），成本是幾十萬個布林值的比較，換到的是報告說得出話。
+        """
+        return StrategySignals(
+            strategy=strategy,
+            table=table,
+            entry_signals=strategy.entry.evaluate(table),
+            exit_signals=strategy.exit.evaluate(table),
+            allowed=strategy.filters.evaluate(table),
+            positions=self.positions(strategy, table),
         )
 
     def _delayed(self, signal: pd.Series) -> pd.Series:

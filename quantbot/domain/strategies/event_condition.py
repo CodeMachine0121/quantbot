@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 
 from quantbot.domain.strategies.condition import Condition
+from quantbot.domain.values.feature_parameters import FeatureParameters
 
 
 class Event(Condition):
@@ -45,3 +46,18 @@ class Event(Condition):
         """
         values = table[self._feature]
         return values.notna() & (values != 0)
+
+
+class EventBuilder:
+    """設定檔的 event。"""
+
+    @property
+    def kind(self) -> str:
+        return "event"
+
+    def build(
+        self, parameters: FeatureParameters, children: tuple[Condition, ...]
+    ) -> Event:
+        if children:
+            raise ValueError("event 是葉條件，不接子節點")
+        return Event(feature=parameters.text("feature"))

@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 
 from quantbot.domain.strategies.condition import Condition
+from quantbot.domain.values.feature_parameters import FeatureParameters
 
 
 class Range(Condition):
@@ -43,3 +44,22 @@ class Range(Condition):
     def _evaluate(self, table: pd.DataFrame) -> pd.Series:
         values = table[self._feature]
         return (values >= self._lower) & (values <= self._upper)
+
+
+class RangeBuilder:
+    """設定檔的 range。"""
+
+    @property
+    def kind(self) -> str:
+        return "range"
+
+    def build(
+        self, parameters: FeatureParameters, children: tuple[Condition, ...]
+    ) -> Range:
+        if children:
+            raise ValueError("range 是葉條件，不接子節點")
+        return Range(
+            feature=parameters.text("feature"),
+            lower=parameters.number("lower"),
+            upper=parameters.number("upper"),
+        )

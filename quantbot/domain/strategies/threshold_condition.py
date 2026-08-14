@@ -5,6 +5,7 @@ import pandas as pd
 
 from quantbot.domain.strategies.condition import Condition
 from quantbot.domain.values.comparison import Comparison
+from quantbot.domain.values.feature_parameters import FeatureParameters
 
 
 class Threshold(Condition):
@@ -42,3 +43,22 @@ class Threshold(Condition):
 
     def _evaluate(self, table: pd.DataFrame) -> pd.Series:
         return self._comparison.applies(table[self._feature], self._value)
+
+
+class ThresholdBuilder:
+    """設定檔的 threshold。"""
+
+    @property
+    def kind(self) -> str:
+        return "threshold"
+
+    def build(
+        self, parameters: FeatureParameters, children: tuple[Condition, ...]
+    ) -> Threshold:
+        if children:
+            raise ValueError("threshold 是葉條件，不接子節點")
+        return Threshold(
+            feature=parameters.text("feature"),
+            comparison=Comparison.parse(parameters.text("comparison")),
+            value=parameters.number("value"),
+        )

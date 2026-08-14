@@ -15,3 +15,11 @@ class CrossDirection(StrEnum):
 
     UP = "up"
     DOWN = "down"
+
+    @classmethod
+    def parse(cls, raw: str) -> CrossDirection:
+        if raw not in tuple(cls):
+            raise ValueError(
+                f"direction 只能是 {[value.value for value in cls]}，實得 {raw!r}"
+            )
+        return cls(raw)

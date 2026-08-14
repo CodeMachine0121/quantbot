@@ -52,6 +52,24 @@ class ComputeFeaturesApplication:
         view = await self._load(instrument, period, pipeline.required_inputs)
         return pipeline.trimmed(view) if trim_warmup else pipeline.compute(view)
 
+    async def run_with_view(
+        self,
+        instrument: Instrument,
+        period: TimeRange,
+        *,
+        specifications: tuple[FeatureSpecification, ...],
+        trim_warmup: bool = True,
+    ) -> tuple[pd.DataFrame, MarketView]:
+        """特徵表與它算的那份原料一起交出去，只讀一次資料庫。
+
+        Day 17 之後的策略路徑需要兩邊：條件要讀特徵，也要讀 K 線的收盤價。
+        分兩次呼叫 run() 與 load_view() 會讀兩次同一段資料，而那是幾秒的事。
+        """
+        pipeline = FeaturePipeline(self._registry.build_all(specifications))
+        view = await self._load(instrument, period, pipeline.required_inputs)
+        table = pipeline.trimmed(view) if trim_warmup else pipeline.compute(view)
+        return table, view
+
     async def load_view(
         self,
         instrument: Instrument,

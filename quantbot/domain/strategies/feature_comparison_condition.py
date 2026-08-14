@@ -5,6 +5,7 @@ import pandas as pd
 
 from quantbot.domain.strategies.condition import Condition
 from quantbot.domain.values.comparison import Comparison
+from quantbot.domain.values.feature_parameters import FeatureParameters
 
 
 class FeatureComparison(Condition):
@@ -40,3 +41,22 @@ class FeatureComparison(Condition):
 
     def _evaluate(self, table: pd.DataFrame) -> pd.Series:
         return self._comparison.applies(table[self._left], table[self._right])
+
+
+class FeatureComparisonBuilder:
+    """設定檔的 compare。"""
+
+    @property
+    def kind(self) -> str:
+        return "compare"
+
+    def build(
+        self, parameters: FeatureParameters, children: tuple[Condition, ...]
+    ) -> FeatureComparison:
+        if children:
+            raise ValueError("compare 是葉條件，不接子節點")
+        return FeatureComparison(
+            left=parameters.text("left"),
+            comparison=Comparison.parse(parameters.text("comparison")),
+            right=parameters.text("right"),
+        )
