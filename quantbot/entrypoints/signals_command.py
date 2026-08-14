@@ -58,6 +58,11 @@ STRATEGY_DIRECTORY = (
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--strategy", default="trend_ema_rsi")
+    parser.add_argument(
+        "--exit-from",
+        default=None,
+        help="拿這份設定的出場條件（與時間規則）換掉 --strategy 的那一半",
+    )
     parser.add_argument("--symbol", default="BTC/USDT")
     parser.add_argument("--market", default="spot", choices=[m.value for m in Market])
     parser.add_argument("--timeframe", default="1h")
@@ -95,12 +100,16 @@ async def main() -> int:
     path = STRATEGY_DIRECTORY / f"{arguments.strategy}.yaml"
 
     # 載入與組裝都在讀資料之前：設定檔有錯就在這裡失敗
-    specification = YamlStrategySpecificationLoader().load(path)
+    loader = YamlStrategySpecificationLoader()
+    specification = loader.load(path)
+    if arguments.exit_from is not None:
+        donor = loader.load(STRATEGY_DIRECTORY / f"{arguments.exit_from}.yaml")
+        specification = specification.with_exit_from(donor)
     assembly = StrategyAssemblyService(
         features=FeatureRegistry(), conditions=ConditionRegistry()
     )
     assembly.assemble(specification)
-    print(f"設定檔 {path.name} 載入成功")
+    print(f"設定檔 {path.name} 載入成功（策略 {specification.name}）")
 
     database = PostgresDatabase.from_settings()
     application = GenerateSignalsApplication(

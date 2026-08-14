@@ -103,6 +103,9 @@ def test_every_registered_kind_is_buildable_with_its_minimum_parameters():
         "all": ConditionSpecification(kind="all", children=(leaf("always"),)),
         "any": ConditionSpecification(kind="any", children=(leaf("always"),)),
         "not": ConditionSpecification(kind="not", children=(leaf("always"),)),
+        "sustained": ConditionSpecification(
+            kind="sustained", parameters={"bars": 2}, children=(leaf("always"),)
+        ),
     }
 
     assert sorted(minimum) == sorted(ConditionRegistry().kinds())

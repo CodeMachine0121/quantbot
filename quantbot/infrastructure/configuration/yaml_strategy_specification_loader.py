@@ -12,7 +12,7 @@ from quantbot.domain.values.holding_rules import HoldingRules
 from quantbot.domain.values.position_direction import PositionDirection
 from quantbot.domain.values.strategy_specification import StrategySpecification
 
-COMPOSITE_KINDS = frozenset({"all", "any", "not"})
+COMPOSITE_KINDS = frozenset({"all", "any", "not", "sustained"})
 
 
 class YamlStrategySpecificationLoader:

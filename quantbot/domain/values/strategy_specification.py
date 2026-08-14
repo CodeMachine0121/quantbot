@@ -29,3 +29,30 @@ class StrategySpecification:
     filters: ConditionSpecification | None = None
     holding: HoldingRules = field(default_factory=HoldingRules.unbounded)
     direction: PositionDirection = PositionDirection.LONG
+
+    def with_exit_from(self, donor: StrategySpecification) -> StrategySpecification:
+        """自己的進場與過濾，配另一份設定的出場。
+
+        這是積木化真正要換到的東西：兩個獨立寫出來的策略，可以把其中一半換掉而
+        不必改任何 Python。如果這件事做不到，那麼「策略是積木」只是一種說法。
+
+        **時間規則跟著出場走。** 最大持有根數是「等不到出場條件時的後備出場」，
+        冷卻期是「出場之後多久才准再進」——兩者都是出場側的規則，所以捐出出場
+        條件的那一份也把它們一起捐出來。留著自己的會得到一個沒人要的組合：
+        新的出場條件配舊的持有上限。
+
+        特徵清單取聯集並去重，因為兩邊的條件都要有東西可讀。去重用 describe()
+        的字串當鍵，那是「同一種特徵、同一組參數」的可讀形式。
+        """
+        merged: dict[str, FeatureSpecification] = {}
+        for specification in (*self.features, *donor.features):
+            merged.setdefault(specification.describe(), specification)
+        return StrategySpecification(
+            name=f"{self.name}_entry_x_{donor.name}_exit",
+            features=tuple(merged.values()),
+            entry=self.entry,
+            exit=donor.exit,
+            filters=self.filters,
+            holding=donor.holding,
+            direction=self.direction,
+        )

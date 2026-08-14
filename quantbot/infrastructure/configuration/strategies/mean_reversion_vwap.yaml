@@ -1,0 +1,50 @@
+# quantbot/infrastructure/configuration/strategies/mean_reversion_vwap.yaml
+# 均值回歸：價格顯著跌破日內 VWAP 就買，回到均價就走。
+#
+# 它跟 trend_ema_rsi 的交易哲學完全相反——那個等趨勢確立才順著走，這個賭偏離
+# 會被拉回來。同一組積木、同一個引擎，只有設定檔不同。
+name: mean_reversion_vwap
+
+features:
+  # Day 11 的偏離度：現價離日內 VWAP 幾個加權標準差
+  - kind: vwap_deviation
+    mode: session
+  # Day 12 的活躍度：用來擋掉冷清時段。z-score 過的值才能跨交易對沿用門檻
+  - kind: activity
+    measure: trade_count
+    baseline: rolling
+    window: 168
+
+# 進場嚴格：偏離要夠深，而且**連續兩根**都站在門檻外。
+# 只看一根的話，一根長下影線就足以觸發，而那種戳一下就回來的價格
+# 通常在下一根就把便宜收走了。
+entry:
+  kind: sustained
+  bars: 2
+  of:
+    - kind: threshold
+      feature: vwap_session_deviation
+      comparison: at_most
+      value: -2.0
+
+# 出場寬鬆：回到均價就走，不等它翻到另一側。
+# 均值回歸賺的是那一段回歸，貪心多等的每一根都在承擔「回歸失敗變成趨勢」的風險。
+exit:
+  kind: threshold
+  feature: vwap_session_deviation
+  comparison: at_least
+  value: 0.0
+
+# 冷清時段的偏離多半是流動性造成的，不是真的錯價
+filters:
+  kind: threshold
+  feature: activity_trade_count_rolling_168
+  comparison: at_least
+  value: -0.5
+
+# 這個策略最怕的事：回歸沒有發生，價格繼續往下。
+# 出場條件永遠不會成立，所以要有一個「認錯」的後備出場——48 根 1 小時 K 線是兩天。
+# 冷卻期擋的是同一波下跌裡一路往下接。
+holding:
+  maximum_holding_bars: 48
+  cooldown_bars: 12

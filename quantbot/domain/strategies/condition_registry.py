@@ -19,6 +19,7 @@ from quantbot.domain.strategies.feature_comparison_condition import (
     FeatureComparisonBuilder,
 )
 from quantbot.domain.strategies.range_condition import RangeBuilder
+from quantbot.domain.strategies.sustained_condition import SustainedBuilder
 from quantbot.domain.strategies.threshold_condition import ThresholdBuilder
 from quantbot.domain.values.condition_specification import ConditionSpecification
 
@@ -54,6 +55,7 @@ class ConditionRegistry:
                 AllOfBuilder(),
                 AnyOfBuilder(),
                 NotBuilder(),
+                SustainedBuilder(),
             )
         }
     )
