@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pandas as pd
+
 from quantbot.domain.entities.candle_series import CandleSeries
 from quantbot.domain.entities.depth_series import DepthSeries
 from quantbot.domain.entities.trade_series import TradeSeries
@@ -42,6 +44,19 @@ class MarketView:
         self, required: frozenset[MarketInput]
     ) -> frozenset[MarketInput]:
         return required - self.available_inputs()
+
+    def strategy_table(self, features: pd.DataFrame) -> pd.DataFrame:
+        """條件要吃的那張表：K 線的欄位 ＋ 算好的特徵。
+
+        兩者併在一起是刻意的。價格不是特徵——它是原料——但條件要拿收盤價跟 VWAP
+        比大小，所以它必須在同一張表裡，而且用 `close` 這個名字，不是某個假特徵的
+        名字。
+
+        對齊方向是「K 線對齊到特徵表」：特徵表已經切掉暖機期，所以它比 K 線短，
+        而反過來對齊會把暖機期的 NaN 放回來。
+        """
+        candles = self.candles.frame.reindex(features.index)
+        return pd.concat([candles, features], axis=1)
 
     def require_trades(self) -> TradeSeries:
         if self.trades is None or self.trades.is_empty():

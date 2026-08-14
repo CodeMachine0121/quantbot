@@ -81,5 +81,4 @@ class GenerateSignalsApplication:
         features, view = await self._features.run_with_view(
             instrument, period, specifications=specification.features
         )
-        candles = view.candles.frame.reindex(features.index)
-        return pd.concat([candles, features], axis=1)
+        return view.strategy_table(features)
