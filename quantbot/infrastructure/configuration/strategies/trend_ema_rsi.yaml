@@ -1,0 +1,41 @@
+# quantbot/infrastructure/configuration/strategies/trend_ema_rsi.yaml
+# 趨勢跟隨：EMA 快慢線交叉進出，RSI 擋掉追高。
+#
+# 這份設定與 Day 17 文章裡的純 Python 版本、積木運算子版本產生逐根完全相同的
+# 訊號序列，有測試釘住（tests/domain/strategies/test_three_ways_agree.py）。
+name: trend_ema_rsi
+
+# 條件樹引用的每一個欄名都必須出自這裡，或是 K 線本來就有的欄位。
+# 對不起來的話 StrategyAssemblyService 會在組裝時就報錯。
+features:
+  - kind: ema
+    period: 12
+  - kind: ema
+    period: 26
+  - kind: rsi
+    period: 14
+
+# 快線向上穿過慢線的**那一根**。不是「快線在慢線之上」——後者在一段趨勢裡
+# 每一根都成立，會一直重複進場。
+entry:
+  kind: crossover
+  fast: ema_12
+  direction: up
+  slow: ema_26
+
+exit:
+  kind: crossover
+  fast: ema_12
+  direction: down
+  slow: ema_26
+
+# 過濾只否決進場：交叉發生時 RSI 已經超過 70 就不追。
+# 注意 not 會讓暖機期的缺值變成「成立」，所以它不能單獨當進場依據——
+# 這裡它只是過濾，而引擎會把暖機期那幾根壓成不持有。
+filters:
+  kind: not
+  of:
+    - kind: threshold
+      feature: rsi_14
+      comparison: above
+      value: 70

@@ -1,0 +1,54 @@
+# quantbot/infrastructure/configuration/strategies/momentum_breakout.yaml
+# 動能爆發：站上前高、而且爆量的時候才進場，熱度退了就走。
+#
+# 它是三個策略裡唯一**事件驅動**的：進場條件是 Day 13 的突破事件，一個月只發生
+# 幾次。訊號稀疏會讓回測的統計意義變薄，這件事 Day 21 會算一次帳。
+name: momentum_breakout
+
+features:
+  # Day 13 的突破：這一根有沒有站上過去 20 根的最高價
+  - kind: breakout
+    side: high
+    window: 20
+  # Day 12 的活躍度：突破要有量才算數
+  - kind: activity
+    measure: trade_count
+    baseline: rolling
+    window: 168
+  - kind: activity
+    measure: absolute_return
+    baseline: rolling
+    window: 168
+
+# 進場嚴格：突破 ＋ 成交熱度高於基準一個標準差以上。
+# Day 13 量過在這個定義下 90.78% 的突破會被打回來，所以突破本身遠遠不夠當進場理由。
+entry:
+  kind: all
+  of:
+    - kind: event
+      feature: breakout_high_20
+    - kind: threshold
+      feature: activity_trade_count_rolling_168
+      comparison: at_least
+      value: 1.0
+
+# 出場：熱度退回基準以下就走。動能策略的前提是「還在動」，
+# 不動了就沒有理由繼續持有——這跟趨勢策略等反向訊號是不同的判斷。
+exit:
+  kind: threshold
+  feature: activity_trade_count_rolling_168
+  comparison: at_most
+  value: 0.0
+
+# 波動已經極端放大時不追。爆量配上極端的單根報酬，多半是消息面的一次性跳動，
+# 那種價位進場等於替別人接最後一段。
+filters:
+  kind: threshold
+  feature: activity_absolute_return_rolling_168
+  comparison: at_most
+  value: 3.0
+
+# 動能是短命的。24 根（一天）等不到熱度退場就自己走。
+holding:
+  maximum_holding_bars: 24
+  cooldown_bars: 6

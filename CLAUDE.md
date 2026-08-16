@@ -27,6 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 設定檔 | **PyYAML** | 管線要顧哪些交易對寫在 YAML，不寫在程式碼裡 |
 | 落地格式 | **pyarrow / parquet** | 原始資料快取與封存；唯一真相來源是資料庫 |
 | 視覺化 | **plotly** | 圖表一律在 `infrastructure/charting/`，domain 永不接觸 plotly |
+| 回測 | **自己實作（`BacktestService`）**；**VectorBT 只當 dev 依賴的對照組** | 回測是 domain 的核心邏輯，而 domain 不得依賴外部技術（import-linter 契約）。對照組有兩個：`tests/reference/reference_backtest.py`（逐根模擬，驗向量化）與 VectorBT（驗語意）|
 | 測試 | **pytest + pytest-asyncio** | 黑箱測試放 `tests/`，鏡射套件結構 |
 | 品質 | **ruff** ＋ **mypy** ＋ **import-linter** | 見 Enforcement；約束一律自動化，不靠人記 |
 | 部署 | **單一 VPS + Docker Compose** | 不用 K8s、不用微服務 |
@@ -55,16 +56,16 @@ Python 有兩種「介面」，用途不同，**NEVER 混用**：
 | 機制 | 語意 | 對應 Go | 用在哪 |
 | :--- | :--- | :--- | :--- |
 | `typing.Protocol` | **結構型**：實作不繼承、不 import 抽象，型別檢查器在注入點驗證 | 就是 Go 的隱式介面 | **所有對外相依**：`CandleSource`、`CandleRepository`、`CandleParser`、`ReferencePriceSource`、`Clock` |
-| `abc.ABC` ＋ `@abstractmethod` | **名義型**：實作必須繼承，可帶共用實作（template method） | Java/C# 的 `implements` | 同一家族要共用骨架：`Indicator` |
+| `abc.ABC` ＋ `@abstractmethod` | **名義型**：實作必須繼承，可帶共用實作（template method） | Java/C# 的 `implements` | 同一家族要共用骨架：`Indicator`、`Condition` |
 
 - 對外介面 **MUST** 是 `Protocol`，放 `domain/interfaces/`，**一個檔案一個 Protocol**。
 - **NEVER 用 `@runtime_checkable` ＋ `isinstance` 驗介面**：它只比對方法名、不比對簽章，給的是假的安全感。相容性由 `mypy` 在組裝點檢查。
-- `Indicator` 是 ABC（要強制 `name` 與 `_compute`、並共用 `compute()` 的契約），這是唯一的 ABC 家族。要新增一種指標就繼承它。
+- ABC 家族有兩個：`Indicator`（強制 `name` 與 `_compute`、共用 `compute()` 的契約）與 `Condition`（強制 `name`／`required_features`／`warmup_bar_count`／`_evaluate`、共用 `evaluate()` 的契約與 `__and__`／`__or__`／`__invert__` 三個組合運算子）。要新增一種指標或條件就繼承對應的那一個。
 - **實例檔內 NEVER 宣告 Protocol**；介面只住在 `domain/interfaces/`。**不使用「port」一詞或資料夾。**
 
 ### Domain 內部結構
 
-domain 只依「種類」分七個資料夾，不出現概念資料夾（不會有 `ingest/`、`backtest/`）：
+domain 只依「種類」分八個資料夾，不出現概念資料夾（不會有 `ingest/`、`backtest/`）：
 
 - `values/` — value object：**frozen dataclass 或 StrEnum**，不可變、可有推導用的 property 與方法，但**沒有 I/O**。例：`Instrument`、`Timeframe`、`Market`、`TimeRange`、`CandleColumns`、`BackfillPlan`、`Gap`、`SourceKind`。
 - `entities/` — 充血實體（含行為的類別）。例：`CandleSeries`（包住 `DataFrame`，負責去重、合併、切片、丟未收盤的那一根）。
@@ -72,6 +73,9 @@ domain 只依「種類」分七個資料夾，不出現概念資料夾（不會�
 - `features/` — `Feature` `Protocol` 的實作 ＋ 每個特徵的 `*Builder` ＋ `FeatureRegistry` ＋ `FeaturePipeline`。跟 `indicators/` 的差別是**輸入**：特徵吃 `MarketView`（K 線、逐筆成交、掛單簿的任意組合），指標只吃 K 線的一欄。`CandleIndicatorFeature` 是兩者之間的轉接器——`Indicator` 的簽章 NEVER 為了統一介面而放寬。
   - 為什麼是 `Protocol` 而不是 ABC：從掛單簿算的、從成交算的、從 K 線算的特徵之間沒有一行共用實作，所以沒有骨架可分。
   - 為什麼有 `*Builder` 這一層：註冊表若直接放類別再 `cls(**parameters)` 就是**反射式分派**（本檔禁用）。builder 讓「這個 kind 需要哪些參數、列舉的合法值是什麼」變成 mypy 檢查得到的普通程式碼。
+- `strategies/` — `Condition` ABC ＋ 三個組合條件（`AllOf`／`AnyOf`／`Not`）＋ 葉條件（`Threshold`、`FeatureComparison`、`Crossover`、`Range`、`Event`、`Always`／`Never`）＋ `Strategy` ＋ `StrategyEngine`。跟 `features/` 的差別是**輸入與輸出**：特徵吃 `MarketView` 回一條數值序列，條件吃**算好的特徵表**回一條布林序列。
+  - 為什麼是 ABC 而不是 Protocol：這個家族有共用實作，而且比 `Indicator` 更多——`evaluate()` 的欄位檢查與布林化、三個運算子、`describe()`，全部只寫一份。
+  - **訊號位移（`shift`）只發生在 `StrategyEngine._delayed()`**，整個專案沒有第二個地方做這件事。條件一律回報「第 t 根的事實」。
 - `services/` — **Domain Service**：跨 value/entity 的計算與編排，**純函數性、無 I/O、不吃 `Protocol`**。命名 `XxxService`，**一個檔案一個 service 類別**。例：`BackfillPlanningService`、`SourceRoutingService`、`DataIntegrityService`、`CandleSanitationService`、`PriceCrossCheckService`、`CandleAgreementService`、`OrderBookSequenceService`、`PredictivePowerService`、`VolumeProfileService`、`BreakoutLabellingService`、`BreakoutStatisticsService`。
   - **`BreakoutLabellingService` 是唯一刻意使用未來資料的東西**，因為它產出的是**標籤**而不是特徵。界線靠型別維持：它不實作 `Feature`、不進 `FeatureRegistry`，所以策略路徑拿不到它。新增這類分析工具時 MUST 沿用同一個界線。
 - `dto/` — **只用於報告類回傳形狀**（`Dto` 後綴的 frozen dataclass）。例：`DataIntegrityReportDto`。行情資料**不轉 DTO**——它以 `CandleSeries` 跨層，因為主體是 `DataFrame`，每次轉一層是純儀式。
@@ -206,12 +210,21 @@ quantbot/
 │   │                                  LiquiditySwing, DistanceToPointOfControl,
 │   │                                  CandleIndicatorFeature（轉接器）,
 │   │                                  FeatureRegistry, FeaturePipeline
+│   ├── strategies/                    Condition(ABC), AllOf/AnyOf/Not, Threshold,
+│   │                                  FeatureComparison, Crossover, Range, Event,
+│   │                                  Always/Never, Sustained, Strategy,
+│   │                                  StrategyEngine, ConditionRegistry
 │   ├── services/                      BackfillPlanningService, SourceRoutingService,
 │   │                                  DataIntegrityService, CandleSanitationService,
 │   │                                  PriceCrossCheckService, CandleAgreementService,
 │   │                                  OrderBookSequenceService, PredictivePowerService,
 │   │                                  VolumeProfileService, BreakoutLabellingService,
-│   │                                  BreakoutStatisticsService
+│   │                                  BreakoutStatisticsService,
+│   │                                  StrategyAssemblyService, BacktestService,
+│   │                                  SlippageEstimationService, CostSensitivityService,
+│   │                                  SearchSpaceService, WalkForwardService,
+│   │                                  PerformanceMetricsService, TrialDeflationService,
+│   │                                  ReturnShuffleService, StrategyCorrelationService
 │   ├── dto/                           DataIntegrityReportDto, PriceCrossCheckReportDto,
 │   │                                  CandleAgreementReportDto, TradeIngestReportDto,
 │   │                                  RecordingReportDto, PredictivePowerReportDto,
@@ -223,6 +236,10 @@ quantbot/
 │                                      ReferencePriceSource, Clock, Feature,
 │                                      FeatureBuilder（一檔一 Protocol）
 ├── application/                       BackfillCandlesApplication, IngestPipelineApplication,
+│                                      GenerateSignalsApplication,
+│                                      RunBacktestApplication, AnalyzeCostsApplication,
+│                                      SearchCombinationsApplication,
+│                                      CompareStrategiesApplication,
 │                                      BackfillTradesApplication,
 │                                      RecordMicrostructureApplication,
 │                                      EvaluateImbalancePowerApplication,
@@ -258,23 +275,61 @@ quantbot/
 │                                      imbalance_power_command, vwap_command,
 │                                      activity_command, breakout_command,
 │                                      liquidity_swing_command, volume_profile_command,
-│                                      features_command（組裝根）
+│                                      features_command, signals_command,
+│                                      backtest_command, cost_analysis_command,
+│                                      search_command, compare_strategies_command（組裝根）
 └── tests/                             鏡射上述結構的黑箱測試
 ```
 
 
-## 現況（2026-08-05）
+## 現況（2026-08-15）
 
-分層結構已就位，對應 iThome 系列 **Day 01–15**（第一、二階段），四項檢查全過：
+分層結構已就位，對應 iThome 系列 **Day 01–22**（第一、二、三階段），四項檢查全過：
 
 ```
-uv run pytest          248 passed, 2 skipped
-uv run mypy            Success（strict，168 檔）
+uv run pytest          420 passed, 2 skipped
+uv run mypy            Success（strict，225 檔）
 uv run lint-imports    3 contracts kept
 uv run ruff check      All checks passed
 ```
 
-Day 09–15 在分支 `feat/microstructure-day-09-15`，七個 commit（一天一個），每個 commit 的樹狀態都可執行、可檢查。
+Day 09–15 在分支 `feat/microstructure-day-09-15`，Day 16–22 在
+`feat/strategy-engine-day-16-22`，都是一天一個 commit，每個 commit 的樹狀態都可執行、
+可檢查。
+
+### Day 16–22（第三階段）的設計主線
+
+- **策略是資料不是類別。** 一個 `Strategy` ＝ 三棵條件樹（進場／出場／過濾）
+  ＋ `HoldingRules` ＋ `PositionDirection`。三組條件的角色不可互換：過濾**只否決
+  進場**，NEVER 促成進場或出場。
+- **訊號位移只寫在 `StrategyEngine._delayed()` 一個地方。** 未來函數不是策略作者
+  要記得的事。`signal_delay_bars=0` 只用於 Day 19 的示範（實測 -63.54% → +95.39%）。
+- **狀態機的迴圈長度是交易筆數而非 K 線數**（`searchsorted` 跳到下一個合法進場
+  位置），所以「NEVER 用 for loop 遍歷 K 線」沒有被打破。
+- **成本乘法套用**：`(1 - cost) × (1 + gross)`，不是減法。減法會多一個二階項，
+  跟現成引擎對不起來。
+- **`BacktestReportDto.trial_count` 沒有預設值**，所以建不出一份沒標注試驗次數的
+  報告。這條從 Day 19 適用到系列結束。
+- **並排比較的公平性由型別保證**：`StrategyComparisonReportDto` 建構時檢查所有
+  策略的 `bar_count` 相同，而 `CompareStrategiesApplication` 把所有設定的特徵取
+  聯集算成**一張共用的表**（暖機期因此一致）。
+- **搜尋空間展開要改寫特徵名**：改 `period` 就改了 `ema_12` → `ema_8`，而條件
+  引用的是名字。漏改會在 Day 17 的特徵對帳失敗，而那是刻意的。
+
+### 這一階段實跑取得的數字（文章引用的都是這些）
+
+- BTC/USDT 現貨 1h、2025-01 至 2026-08：交叉 240 次，而「站在上面」7,001 根。
+- 三份設定（趨勢／均值回歸／動能）交易 232／28／190 筆，曝險 48.42%／1.35%／6.67%。
+- 交叉組合：趨勢進場配動能出場曝險 3.46%、動能進場配趨勢出場 35.08%。
+- 理想回測總報酬 −26.83%／+6.10%／+0.89%，同期 BuyAndHold −33.71%。
+- 掛單簿實測半價差 **0.00078 bp**（原本假設的 0.05% 高估約 6,400 倍）；
+  前五檔買方名目中位數 229,406 USDT，一萬鎂的單吃不完。
+- 由賺轉賠的來回成本率：均值回歸 0.2117%、動能爆發 0.0048%、趨勢跟隨不存在。
+- 組合搜尋 48 種剪枝後 44 種：真實資料最佳樣本內夏普 −1.266，打亂順序的假資料
+  五個 seed 分別 −0.860／+1.186／+1.187／+0.862／−0.311（五次全部比真實資料好）。
+  理論上界 +2.620 高於實測，差距來自 44 個組合彼此高度相關。
+- 並排比較（共用表，13,679 根）：唯一贏過基準的是均值回歸（−2.45% 對 −35.20%），
+  而它自己還是賠錢的；勝率 53.6% 配賠率 0.64 就是「高勝率也會賠」的實例。
 
 ### Day 09–15 新增的資料路徑
 
